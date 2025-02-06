@@ -1,0 +1,4 @@
+[bindings.swift]
+module_name = "VodozemacSDK"
+language = "swift"
+output = "generated"

@@ -4,3 +4,6 @@ Cargo.lock
 /afl/*/target
 /afl/*/out*
 mutants.out*
+/bindings/*/target
+/bindings/*/generated
+.idea
