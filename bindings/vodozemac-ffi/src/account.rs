@@ -4,32 +4,33 @@ use vodozemac::olm::{Session as InnerSession};
 use vodozemac::olm::{OlmMessage::Normal, OlmMessage::PreKey};
 use std::sync::{Arc, Mutex};
 use vodozemac::{Curve25519PublicKey};
+use serde::{Deserialize, Serialize};
+use crate::error::VodozemacError;
 
-#[derive(uniffi::Record)]
+#[derive(Debug, Deserialize, Serialize, uniffi::Record)]
 pub struct AccountIdentityKeys {
     curve25519: String,
     ed25519: String
 }
 
-#[derive(uniffi::Record)]
+#[derive(Debug, Deserialize, Serialize, uniffi::Record)]
 pub struct AccountOneTimeKeys {
     pub one_time_keys: Vec<OneTimeKey>
 }
 
-#[derive(uniffi::Record)]
+#[derive(Debug, Deserialize, Serialize, uniffi::Record)]
 pub struct OneTimeKey {
     pub key_id: String,
     pub value: String
 }
 
-#[derive(uniffi::Enum)]
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, uniffi::Enum)]
 pub enum OlmMessageType {
     PreKey = 0,
     Normal = 1
 }
 
-#[derive(uniffi::Record)]
+#[derive(Debug, Deserialize, Serialize, uniffi::Record)]
 pub struct OlmMessage {
     pub ciphertext: String,
     pub message_type: OlmMessageType
@@ -61,42 +62,46 @@ pub struct Session {
 #[export]
 impl Session {
 
-    pub fn session_id(&self) -> String {
-        let inner = self.inner.lock().unwrap();
-        inner.session_id()
+    pub fn session_id(&self) -> Result<String, VodozemacError> {
+        let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
+        Ok(inner.session_id())
     }
 
-    pub fn encrypt(&self, plaintext: String) -> OlmMessage {
-        let mut inner = self.inner.lock().unwrap();
+    pub fn encrypt(&self, plaintext: String) -> Result<OlmMessage, VodozemacError> {
+        let mut inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
         let result = inner.encrypt(plaintext.as_bytes());
         match result {
             Normal(msg) => {
-                OlmMessage {
+                Ok(OlmMessage {
                     ciphertext: msg.to_base64(),
                     message_type: OlmMessageType::Normal,
-                }
+                })
             }
             PreKey(msg) => {
-                OlmMessage {
+                Ok(OlmMessage {
                     ciphertext: msg.to_base64(),
                     message_type: OlmMessageType::PreKey,
-                }
+                })
             }
         }
     }
 
-    pub fn decrypt(&self, message: OlmMessage) -> String {
-        let mut inner = self.inner.lock().unwrap();
+    pub fn decrypt(&self, message: OlmMessage) -> Result<String, VodozemacError> {
+        let mut inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
         match message.message_type {
             OlmMessageType::PreKey => {
-                let m = PreKey(PreKeyMessage::from_base64(&message.ciphertext).unwrap());
-                let result = inner.decrypt(&m).unwrap();
-                String::from_utf8(result).unwrap()
+                let pk_msg = PreKeyMessage::from_base64(&message.ciphertext)?;
+                let m = PreKey(pk_msg);
+                let result = inner.decrypt(&m)?;
+                let str = String::from_utf8(result)?;
+                Ok(str)
             }
             OlmMessageType::Normal => {
-                let m = Normal(Message::from_base64(&message.ciphertext).unwrap());
-                let result = inner.decrypt(&m).unwrap();
-                String::from_utf8(result).unwrap()
+                let msg = Message::from_base64(&message.ciphertext)?;
+                let m = Normal(msg);
+                let result = inner.decrypt(&m)?;
+                let str = String::from_utf8(result)?;
+                Ok(str)
             }
         }
     }
@@ -117,53 +122,63 @@ impl Account {
         }
     }
 
-    pub fn identity_keys(&self) -> AccountIdentityKeys {
-        let inner = self.inner.lock().unwrap();
+    pub fn identity_keys(&self) -> Result<AccountIdentityKeys, VodozemacError> {
+        let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
         let identity_keys = inner.identity_keys();
         let curve_key = identity_keys.curve25519.to_base64();
         let ed25519_key = identity_keys.ed25519.to_base64();
-        AccountIdentityKeys { curve25519: curve_key, ed25519: ed25519_key }
+
+        Ok(AccountIdentityKeys {
+            curve25519: curve_key,
+            ed25519: ed25519_key
+        })
     }
 
-    pub fn mark_keys_as_published(&self) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.mark_keys_as_published()
+    pub fn mark_keys_as_published(&self) -> Result<(), VodozemacError> {
+        let mut inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
+        Ok(inner.mark_keys_as_published())
     }
 
-    pub fn generate_one_time_keys(&self, count: u32) {
-        let mut inner = self.inner.lock().unwrap();
+    pub fn generate_one_time_keys(&self, count: u32) -> Result<(), VodozemacError> {
+        let mut inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
         inner.generate_one_time_keys(count as usize);
+        Ok(())
     }
 
-    pub fn one_time_keys(&self) -> AccountOneTimeKeys {
-        let inner = self.inner.lock().unwrap();
+    pub fn one_time_keys(&self) -> Result<AccountOneTimeKeys, VodozemacError> {
+        let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
         let keys = inner.one_time_keys()
             .iter()
             .map(|(k, v)| (k.to_base64(), v.to_base64()))
             .map(|(k, v)| OneTimeKey { key_id: k, value: v }).collect();
 
-        AccountOneTimeKeys { one_time_keys: keys }
+        Ok(AccountOneTimeKeys { one_time_keys: keys })
     }
 
-    pub fn outbound_session(&self, identity_key: String, one_time_key: String) -> Session {
-        let inner = self.inner.lock().unwrap();
-        Session {
+    pub fn outbound_session(&self, identity_key: String, one_time_key: String) -> Result<Session, VodozemacError> {
+        let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
+        let base64_identity_key = Curve25519PublicKey::from_base64(&identity_key)?;
+        let base64_one_time_key = Curve25519PublicKey::from_base64(&one_time_key)?;
+
+        Ok(Session {
             inner: Mutex::new(inner.create_outbound_session(
                 SessionConfig::default(),
-                Curve25519PublicKey::from_base64(&identity_key).unwrap(),
-                Curve25519PublicKey::from_base64(&one_time_key).unwrap(),
+                base64_identity_key,
+                base64_one_time_key,
             ))
-        }
+        })
     }
 
-    pub fn create_inbound_session(&self, their_identity_key: String, pre_key_message: String) -> CreateInboundSessionResult {
-        let mut inner = self.inner.lock().unwrap();
-        let key = Curve25519PublicKey::from_base64(&their_identity_key).unwrap();
-        let pk = PreKeyMessage::from_base64(&pre_key_message).unwrap();
-        let result = inner.create_inbound_session(key, &pk).unwrap();
-        CreateInboundSessionResult {
+    pub fn create_inbound_session(&self, their_identity_key: String, pre_key_message: String) -> Result<CreateInboundSessionResult, VodozemacError> {
+        let mut inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
+        let key = Curve25519PublicKey::from_base64(&their_identity_key)?;
+        let pk = PreKeyMessage::from_base64(&pre_key_message)?;
+        let result = inner.create_inbound_session(key, &pk)?;
+        let message = String::from_utf8(result.plaintext)?;
+
+        Ok(CreateInboundSessionResult {
             session: Arc::from(Session { inner: Mutex::new(result.session) }),
-            message: String::from_utf8(result.plaintext).unwrap()
-        }
+            message
+        })
     }
 }
