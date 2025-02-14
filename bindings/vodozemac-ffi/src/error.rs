@@ -19,6 +19,14 @@ pub enum VodozemacError {
     KeyErrorDecode { error: String },
     #[error("session error: {error}")]
     SessionError { error: String },
+    #[error("serde error: {error}")]
+    SerdeError { error: String },
+}
+
+impl From<serde_json::Error> for VodozemacError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::SerdeError { error: err.to_string() }
+    }
 }
 
 impl From<SessionCreationError> for VodozemacError {

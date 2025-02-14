@@ -1,5 +1,5 @@
 use uniffi::export;
-use vodozemac::olm::{Account as InnerAccount, Message, PreKeyMessage, SessionConfig};
+use vodozemac::olm::{Account as InnerAccount, AccountPickle, Message, PreKeyMessage, SessionConfig, SessionPickle};
 use vodozemac::olm::{Session as InnerSession};
 use vodozemac::olm::{OlmMessage::Normal, OlmMessage::PreKey};
 use std::sync::{Arc, Mutex};
@@ -62,6 +62,19 @@ pub struct Session {
 #[export]
 impl Session {
 
+    pub fn to_json_session(&self) -> Result<String, VodozemacError> {
+        let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
+        Ok(serde_json::to_string(&inner.pickle()).unwrap_or_else(|_| "{}".to_string()))
+    }
+
+    #[uniffi::constructor]
+    fn from(json: String) -> Result<Self, VodozemacError>  {
+        let migration_data: SessionPickle = serde_json::from_str(json.as_str())?;
+        Ok(Self {
+            inner: Mutex::new(InnerSession::from(migration_data)),
+        })
+    }
+
     pub fn session_id(&self) -> Result<String, VodozemacError> {
         let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
         Ok(inner.session_id())
@@ -120,6 +133,19 @@ impl Account {
         Self {
             inner: Mutex::new(InnerAccount::default()),
         }
+    }
+
+    #[uniffi::constructor]
+    fn from(json: String) -> Result<Self, VodozemacError>  {
+        let migration_data: AccountPickle = serde_json::from_str(json.as_str())?;
+        Ok(Self {
+            inner: Mutex::new(InnerAccount::from(migration_data)),
+        })
+    }
+
+    pub fn to_json_account(&self) -> Result<String, VodozemacError> {
+        let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
+        Ok(serde_json::to_string(&inner.pickle()).unwrap_or_else(|_| "{}".to_string()))
     }
 
     pub fn identity_keys(&self) -> Result<AccountIdentityKeys, VodozemacError> {
