@@ -1,11 +1,11 @@
+use crate::error::VodozemacError;
+use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 use uniffi::export;
 use vodozemac::olm::{Account as InnerAccount, AccountPickle, Message, PreKeyMessage, SessionConfig, SessionPickle};
-use vodozemac::olm::{Session as InnerSession};
 use vodozemac::olm::{OlmMessage::Normal, OlmMessage::PreKey};
-use std::sync::{Arc, Mutex};
-use vodozemac::{Curve25519PublicKey};
-use serde::{Deserialize, Serialize};
-use crate::error::VodozemacError;
+use vodozemac::olm::Session as InnerSession;
+use vodozemac::Curve25519PublicKey;
 
 #[derive(Debug, Deserialize, Serialize, uniffi::Record)]
 pub struct AccountIdentityKeys {
@@ -146,6 +146,12 @@ impl Account {
     pub fn to_json_account(&self) -> Result<String, VodozemacError> {
         let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
         Ok(serde_json::to_string(&inner.pickle()).unwrap_or_else(|_| "{}".to_string()))
+    }
+
+    pub fn sign(&self, message: String) -> Result<String, VodozemacError> {
+        let inner = self.inner.lock().map_err(|_| VodozemacError::LockError)?;
+        let signature = inner.sign(message);
+        Ok(signature.to_base64())
     }
 
     pub fn identity_keys(&self) -> Result<AccountIdentityKeys, VodozemacError> {
